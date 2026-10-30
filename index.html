@@ -287,7 +287,7 @@ byFill('#7a7a7a').filter(isRect).forEach(s => {                            // be
   .forEach((s, i) => slab(s.pts.slice(0, 4), '#c9c5be', .45 * (i + 1)));
 byFill('#c9c9c9').forEach(s => slab(s.pts.slice(0, 4), '#c9c5be', .45));
 byFill('#d6d6d6').filter(s => area(s) < 2 && isRect(s)).forEach(s => slab(s.pts.slice(0, 4), '#bdb8ae', .1));
-byFill('#939598').forEach(s => slab(s.pts, '#a9a6a0', 2.4));
+byFill('#939598').forEach(s => slab(s.pts, '#a9a6a0', .5));             // low ledge by the entrances
 shapes.filter(s => s.stroke === '#7a7a7a' && s.pts.length === 2).forEach(s => strip(s.pts, .06, 1.0, '#6c6a66'));
 byFill('#d9cbb0').forEach(s => slab(s.pts, '#c9b897', .15));
 byFill('#6fa35a').forEach(s => {
@@ -303,7 +303,13 @@ byFill('#6fa35a').forEach(s => {
 // Sponsor tents: red dashed outlines.
 for (const s of shapes.filter(s => s.stroke === '#e30613' && s.dash)) {
   const b = bbox(s.pts);
-  if (b.w < 1 && b.d < 1) { box(b.w, 1.1, b.d, '#ffffff', b.cx, b.cz); box(b.w + .02, .25, b.d + .02, '#e30613', b.cx, b.cz, 0, .85); continue; }
+  if (b.w < 1 && b.d < 1) {                                                // small dashed box = drinks fridge, glass door toward the court
+    box(.6, 1.9, .6, '#d0101c', b.cx, b.cz);
+    box(.46, 1.45, .02, '#bfe3ef', b.cx, b.cz + .31, 0, .3, scene, { metalness: .2, roughness: .1, transparent: true, opacity: .8 });
+    box(.6, .3, .62, '#f2f2f2', b.cx, b.cz, 0, 1.6);
+    label('Ψυγείο', b.cx, b.cz, 2.6);
+    continue;
+  }
   const isDJ = Math.hypot(b.cx - 19.9, b.cz - 22.2) < 1.5;
   const H = 2.4, canopy = isDJ ? '#151515' : '#ffffff';
   for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1]]) cyl(.04, H, '#9a9a9a', x, z);
