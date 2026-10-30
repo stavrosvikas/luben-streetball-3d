@@ -31,7 +31,12 @@
   .lbl.street { background:transparent; color:#5d5a55; font-weight:600; letter-spacing:.12em; font-size:10px; }
   .lbl.in-green { background:#00a651; } .lbl.in-orange { background:#ff8a00; }
   .hide-labels .lbl { display:none; }
-  @media (max-width:720px) { #legend { display:none; } #title h1 { font-size:16px; } }
+  #help { bottom:16px; left:16px; padding:10px 14px; font-size:12px; line-height:1.7; }
+  #help b { display:inline-block; min-width:150px; font-weight:600; }
+  #help .touch { display:none; }
+  @media (pointer:coarse) { #help .mouse { display:none; } #help .touch { display:block; } }
+  @media (max-width:1100px) { #help { bottom:auto; top:96px; } }
+  @media (max-width:720px) { #legend { display:none; } #title h1 { font-size:16px; } #help { font-size:11px; } #help b { min-width:120px; } }
 </style>
 <script type="importmap">
 { "imports": {
@@ -61,6 +66,14 @@
   <div><i style="background:#11ff11"></i>Ρεύματα</div>
   <div><i style="background:#00a651"></i>Είσοδος κοινού</div>
   <div><i style="background:#ff8a00"></i>Είσοδος οχημάτων</div>
+</div>
+
+<div id="help" class="panel">
+  <div class="mouse"><b>Αριστερό κλικ + σύρε</b>περιστροφή</div>
+  <div class="mouse"><b>Δεξί κλικ + σύρε</b>μετακίνηση</div>
+  <div class="mouse"><b>Ροδέλα</b>zoom</div>
+  <div class="touch"><b>Ένα δάχτυλο</b>περιστροφή</div>
+  <div class="touch"><b>Δύο δάχτυλα</b>zoom &amp; μετακίνηση</div>
 </div>
 
 <div id="controls" class="panel">
@@ -177,6 +190,14 @@ ground.rotation.x = -Math.PI / 2; ground.position.set(site.cx, -0.02, site.cz); 
 slab(wall, '#efece6', 0.04);
 
 const shapes = PLAN.shapes;
+const insideSite = ([x, z]) => {                                           // point-in-polygon against the fence line
+  let inside = false;
+  for (let i = 0, j = wall.length - 1; i < wall.length; j = i++) {
+    const [xi, zi] = wall[i], [xj, zj] = wall[j];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+};
 const isRect = s => s.pts.length === 4 || (s.pts.length === 5 && Math.hypot(s.pts[0][0] - s.pts[4][0], s.pts[0][1] - s.pts[4][1]) < .05);
 const area = s => { const b = bbox(s.pts); return b.w * b.d; };
 const byFill = c => shapes.filter(s => s.fill === c);
@@ -194,15 +215,16 @@ for (let i = 0; i < wall.length; i++) {
   const a = wall[i], b = wall[(i + 1) % wall.length];
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
   const n = Math.max(1, Math.round(len / 2.5));
+  const kerb = Math.min(a[1], b[1]) > 45 ? .15 : .45;                      // low kerb on the Ameinokleous (entrance) side
   for (let k = 0; k < n; k++) {
     const t0 = k / n, t1 = (k + 1) / n, tm = (t0 + t1) / 2;
     const mx = a[0] + (b[0] - a[0]) * tm, mz = a[1] + (b[1] - a[1]) * tm, seg = len / n;
     if (inGate(mx, mz)) continue;
-    box(seg, .45, .25, '#bdb8ae', mx, mz, ang);                             // concrete kerb
-    const tex = meshTex.clone(); tex.needsUpdate = true; tex.repeat.set(seg / .35, (FENCE_H - .45) / .35);
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(seg, FENCE_H - .45),
+    box(seg, kerb, .25, '#bdb8ae', mx, mz, ang);                            // concrete kerb
+    const tex = meshTex.clone(); tex.needsUpdate = true; tex.repeat.set(seg / .35, (FENCE_H - kerb) / .35);
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(seg, FENCE_H - kerb),
       new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: .3, side: THREE.DoubleSide, roughness: .6, metalness: .4 }));
-    panel.position.set(mx, .45 + (FENCE_H - .45) / 2, mz); panel.rotation.y = -ang; add(panel);
+    panel.position.set(mx, kerb + (FENCE_H - kerb) / 2, mz); panel.rotation.y = -ang; add(panel);
     const px = a[0] + (b[0] - a[0]) * t0, pz = a[1] + (b[1] - a[1]) * t0;
     if (!inGate(px, pz)) cyl(.05, FENCE_H, '#2f3a33', px, pz);
   }
@@ -313,23 +335,29 @@ function backdrop(b) {
   face.position.set(0, H / 2 + .1, .065); g.add(face);
   scene.add(g);
 }
-// LED screens: outer cyan rect gives size and position; face the game court.
+// LED screens: portrait 1.5 × 2 m panel raised 1 m on two legs, centred on the cyan rect, facing the game court.
+const LED_W = 1.5, LED_H = 2, LED_UP = 1;
 for (const s of byFill('#27aae1')) {
-  const b = bbox(s.pts), len = Math.max(b.w, b.d);
+  const b = bbox(s.pts);
   const g = new THREE.Group(); g.position.set(b.cx, 0, b.cz);
   g.rotation.y = b.cx < game.cx ? Math.PI / 2 : -Math.PI / 2;
-  for (const t of [-len / 2 + .1, len / 2 - .1]) { const l = cyl(.05, 1.0, '#333333', t, 0, 0, g); }
-  const scr = new THREE.Mesh(new THREE.BoxGeometry(len, len * .5625, .12), mat('#1b1b1b')); scr.position.y = 1 + len * .28; add(scr, g);
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(len * .96, len * .54),
-    new THREE.MeshStandardMaterial({ color: '#2e3192', emissive: '#2e3192', emissiveIntensity: .9, map: LOGO, emissiveMap: LOGO }));
-  glow.position.set(0, 1 + len * .28, .065); g.add(glow);
+  for (const t of [-LED_W / 2 + .15, LED_W / 2 - .15]) cyl(.05, LED_UP, '#333333', t, 0, 0, g);
+  const scr = new THREE.Mesh(new THREE.BoxGeometry(LED_W, LED_H, .15), mat('#1b1b1b')); scr.position.y = LED_UP + LED_H / 2; add(scr, g);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(LED_W - .08, LED_H - .08),
+    new THREE.MeshStandardMaterial({ color: '#1d2170', emissive: '#2e3192', emissiveIntensity: .8 }));
+  glow.position.set(0, LED_UP + LED_H / 2, .08); g.add(glow);
+  const logo = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.14),
+    new THREE.MeshBasicMaterial({ map: LOGO, transparent: true, toneMapped: false }));
+  logo.position.set(0, LED_UP + LED_H / 2, .085); g.add(logo);
   scene.add(g);
-  label('LED', b.cx, b.cz, 3.0);
+  label('LED', b.cx, b.cz, LED_UP + LED_H + .6);
 }
 // Chemical toilets: small slate squares are single cabins; a long slate block is a row of cabins.
 const wcLabels = [];
 for (const s of byFill('#4e6478')) {
-  const o = obb(s.pts), n = Math.max(1, Math.round(o.len / 1.25)), step = o.len / n;
+  const o = obb(s.pts);
+  if (!insideSite(o.c)) continue;                                          // only toilets inside the perimeter
+  const n = Math.max(1, Math.round(o.len / 1.25)), step = o.len / n;
   for (let i = 0; i < n; i++) {
     const t = -o.len / 2 + step * (i + .5), x = o.c[0] + Math.cos(o.ang) * t, z = o.c[1] + Math.sin(o.ang) * t;
     box(step * .94, 2.25, Math.min(o.dep, 1.3), '#4e6478', x, z, o.ang);
@@ -359,7 +387,10 @@ label('ΑΓΩΝΑΣ Α · 1VS1', (game.x0 + game.cx) / 2, game.cz, .6, 'zone');
 label('ΑΓΩΝΑΣ Β · 1VS1', (game.x1 + game.cx) / 2, game.cz, .6, 'zone');
 label('ΖΕΣΤΑΜΑ & ACTIVATIONS', warm.cx, warm.cz, .6, 'zone');
 label('ΚΕΡΚΙΔΑ', 20.7, 45.4, 2.0);
-for (const g of gates) label(g.color === '#00a651' ? 'ΕΙΣΟΔΟΣ ΚΟΙΝΟΥ' : 'ΕΙΣΟΔΟΣ ΟΧΗΜΑΤΩΝ', g.c[0], g.c[1] + 3, .3, g.color === '#00a651' ? 'in-green' : 'in-orange');
+for (const g of gates) {
+  const pub = g.color === '#00a651';
+  label(pub ? 'ΕΙΣΟΔΟΣ ΚΟΙΝΟΥ' : 'ΕΙΣΟΔΟΣ ΟΧΗΜΑΤΩΝ', g.c[0] + (pub ? -3 : 3), g.c[1] + 3, .3, pub ? 'in-green' : 'in-orange');
+}
 label('ΟΔΟΣ Μ. ΣΑΡΚΟΥΔΙΝΟΥ', 20, -4, 0, 'street');
 label('ΟΔΟΣ ΑΜΕΙΝΟΚΛΕΟΥΣ', 14, 52.5, 0, 'street');
 label('ΜΟΥΡΤΑΪ (ΠΕΖΟΔΡΟΜΟΣ)', 50, 36, 0, 'street');
