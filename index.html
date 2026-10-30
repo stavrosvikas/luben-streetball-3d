@@ -80,6 +80,7 @@
   <button data-view="iso" class="on">Ισομετρική</button>
   <button data-view="top">Κάτοψη</button>
   <button data-view="gate">Από την είσοδο</button>
+  <button data-view="booths">Χορηγοί</button>
   <span class="sep"></span>
   <button id="spin">Περιστροφή</button>
   <button id="labels" class="on">Ετικέτες</button>
@@ -314,8 +315,10 @@ for (const s of shapes.filter(s => s.stroke === '#e30613' && s.dash)) {
   const H = 2.4, canopy = isDJ ? '#151515' : '#ffffff';
   for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1]]) cyl(.04, H, '#9a9a9a', x, z);
   box(b.w, .25, b.d, '#e30613', b.cx, b.cz, 0, H - .25);                   // valance
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.SQRT1_2, .9, 4, 1), mat(canopy));
-  roof.rotation.y = Math.PI / 4; roof.scale.set(b.w, 1, b.d); roof.position.set(b.cx, H + .45, b.cz); add(roof);
+  // Square pyramid: rotate the geometry itself before scaling, so the roof edges line up with the valance.
+  const roofGeo = new THREE.ConeGeometry(Math.SQRT1_2, .9, 4, 1); roofGeo.rotateY(Math.PI / 4);
+  const roof = new THREE.Mesh(roofGeo, mat(canopy, { side: THREE.DoubleSide, flatShading: true }));
+  roof.scale.set(b.w, 1, b.d); roof.position.set(b.cx, H + .45, b.cz); add(roof);
   if (isDJ) { box(1.6, 1.0, .7, '#111111', b.cx, b.cz + .2); box(1.2, .08, .45, '#3a3a3a', b.cx, b.cz + .2, 0, 1.0); }
   else box(Math.min(b.w, b.d) * .8, .9, .5, '#f2f2f2', b.cx, b.z1 - .6, 0, 0);  // counter
   const near = BOOTH_NAMES.reduce((best, n) => { const d = Math.hypot(n.at[0] - b.cx, n.at[1] - b.cz); return d < best.d ? { d, n } : best; }, { d: 3 });
@@ -420,6 +423,7 @@ const VIEWS = {
   iso:  { dir: new THREE.Vector3(1, 1.15, 1),  zoom: 1 },
   top:  { dir: new THREE.Vector3(0, 1, .0001), zoom: 1.05 },
   gate: { dir: new THREE.Vector3(.35, .45, 1), zoom: 1.6, focus: [29, 38] },
+  booths: { dir: new THREE.Vector3(1, .9, .55), zoom: 2.8, focus: [39, 20] },
 };
 function fit() {
   const aspect = innerWidth / innerHeight, half = 36;
