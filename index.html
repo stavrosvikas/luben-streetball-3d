@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luben Streetball 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#111; --muted:#6b6b6b; --panel:rgba(255,255,255,.92); --line:#e4e1dc; --accent:#e6007e; --bg:#ece9e3; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); font-family:Inter,system-ui,sans-serif; color:var(--ink); overflow:hidden; }
+  #app { position:fixed; inset:0; }
+  .panel { position:fixed; background:var(--panel); border:1px solid var(--line); border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.08); backdrop-filter:blur(6px); }
+  #title { top:16px; left:16px; padding:14px 18px; max-width:calc(100vw - 32px); }
+  #title h1 { margin:0; font-size:20px; font-weight:800; letter-spacing:.02em; }
+  #title h1 span { color:var(--accent); }
+  #title p { margin:4px 0 0; font-size:12px; color:var(--muted); }
+  #controls { bottom:16px; left:50%; transform:translateX(-50%); padding:6px; display:flex; gap:4px; flex-wrap:wrap; justify-content:center; max-width:calc(100vw - 32px); }
+  #controls button { font:600 12px Inter,sans-serif; border:0; background:transparent; color:var(--ink); padding:9px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+  #controls button:hover { background:#f1eee9; }
+  #controls button.on { background:var(--ink); color:#fff; }
+  #controls .sep { width:1px; background:var(--line); margin:4px 2px; }
+  #legend { top:16px; right:16px; padding:12px 14px; font-size:12px; width:230px; }
+  #legend h2 { margin:0 0 8px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  #legend div { display:flex; align-items:center; gap:8px; margin:5px 0; }
+  #legend i { width:14px; height:14px; border-radius:3px; flex:none; }
+  .lbl { font:600 11px Inter,sans-serif; color:#fff; background:rgba(17,17,17,.82); padding:3px 7px; border-radius:6px; white-space:nowrap; pointer-events:none; }
+  .lbl.zone { background:var(--accent); font-size:12px; font-weight:800; letter-spacing:.03em; }
+  .lbl.booth { background:#e30613; min-width:20px; text-align:center; }
+  .lbl.street { background:transparent; color:#5d5a55; font-weight:600; letter-spacing:.12em; font-size:10px; }
+  .lbl.in-green { background:#00a651; } .lbl.in-orange { background:#ff8a00; }
+  .hide-labels .lbl { display:none; }
+  @media (max-width:720px) { #legend { display:none; } #title h1 { font-size:16px; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script src="plan.js"></script>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="title" class="panel">
+  <h1>LUBEN STREETBALL <span>1VS1</span></h1>
+  <p>Κάτοψη 3D · Γήπεδο Σαρκουδίνου, Νέος Κόσμος · Σάββατο 14.11.2026</p>
+</div>
+
+<div id="legend" class="panel">
+  <h2>Υπόμνημα</h2>
+  <div><i style="background:#e6007e"></i>Γήπεδο αγώνων (2 × 1vs1)</div>
+  <div><i style="background:#f9c6df"></i>Ζέσταμα &amp; activations</div>
+  <div><i style="background:#111"></i>Γραμματεία, backdrops</div>
+  <div><i style="background:#fff;border:2px dashed #e30613"></i>Χορηγοί</div>
+  <div><i style="background:#27aae1"></i>LED screens</div>
+  <div><i style="background:#4e6478"></i>Χημικές τουαλέτες</div>
+  <div><i style="background:#ffd400"></i>ΕΚΑΒ</div>
+  <div><i style="background:#11ff11"></i>Ρεύματα</div>
+  <div><i style="background:#00a651"></i>Είσοδος κοινού</div>
+  <div><i style="background:#ff8a00"></i>Είσοδος οχημάτων</div>
+</div>
+
+<div id="controls" class="panel">
+  <button data-view="iso" class="on">Ισομετρική</button>
+  <button data-view="top">Κάτοψη</button>
+  <button data-view="gate">Από την είσοδο</button>
+  <span class="sep"></span>
+  <button id="spin">Περιστροφή</button>
+  <button id="labels" class="on">Ετικέτες</button>
+  <button id="cables" class="on">Ρεύματα</button>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+// Labels for things the PDF only carries as outlined glyphs. Matched to the nearest booth centre (metres).
+const BOOTH_NAMES = [
+  { at: [39.4, 14.5], name: '1' },
+  { at: [39.4, 19.5], name: '2' },
+  { at: [39.4, 27.5], name: '3' },
+  { at: [39.4, 30.5], name: '4' },
+  { at: [39.5, 34.5], name: 'stabatos' },
+  { at: [38.9, 3.5],  name: '5' },
+  { at: [34.6, 3.2],  name: 'Street wear' },
+  { at: [19.9, 22.2], name: 'DJ' },
+];
+
+const PLAN = window.PLAN;
+const app = document.getElementById('app');
+
+// ---------- renderer / scene ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+app.appendChild(renderer.domElement);
+
+const labelRenderer = new CSS2DRenderer();
+labelRenderer.setSize(innerWidth, innerHeight);
+Object.assign(labelRenderer.domElement.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
+app.appendChild(labelRenderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#ece9e3');
+
+// ---------- geometry helpers (plan x → three x, plan y → three z) ----------
+const V = (p, y = 0) => new THREE.Vector3(p[0], y, p[1]);
+const bbox = pts => {
+  const xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
+  const b = { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+  b.cx = (b.x0 + b.x1) / 2; b.cz = (b.z0 + b.z1) / 2; b.w = b.x1 - b.x0; b.d = b.z1 - b.z0;
+  return b;
+};
+// Oriented box from a (possibly rotated) rectangle: first three corners give the axes.
+const obb = pts => {
+  const [a, b, , d] = pts;
+  const c = pts.slice(0, 4).reduce((s, p) => [s[0] + p[0] / 4, s[1] + p[1] / 4], [0, 0]);
+  const w = Math.hypot(b[0] - a[0], b[1] - a[1]), dep = Math.hypot(d[0] - a[0], d[1] - a[1]);
+  const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  return w >= dep ? { c, len: w, dep, ang } : { c, len: dep, dep: w, ang: ang + Math.PI / 2 };
+};
+const mats = {};
+const mat = (color, o = {}) => (mats[color + JSON.stringify(o)] ??= new THREE.MeshStandardMaterial({ color, roughness: .85, metalness: 0, ...o }));
+
+function add(mesh, parent = scene, shadow = true) {
+  mesh.castShadow = shadow; mesh.receiveShadow = true; parent.add(mesh); return mesh;
+}
+// Box centred on (cx, cz), sitting on y0, rotated by ang around Y (plan angle).
+function box(w, h, d, color, cx, cz, ang = 0, y0 = 0, parent = scene, o) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), typeof color === 'string' ? mat(color, o) : color);
+  m.position.set(cx, y0 + h / 2, cz); m.rotation.y = -ang; return add(m, parent);
+}
+function cyl(r, h, color, x, z, y0 = 0, parent = scene) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 16), mat(color));
+  m.position.set(x, y0 + h / 2, z); return add(m, parent);
+}
+// Flat or extruded polygon from plan points.
+function slab(pts, color, h = 0.02, y0 = 0, o) {
+  const s = new THREE.Shape(pts.map(p => new THREE.Vector2(p[0], -p[1])));
+  const g = new THREE.ExtrudeGeometry(s, { depth: h, bevelEnabled: false });
+  g.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(g, mat(color, o)); m.position.y = y0; return add(m, scene, h > 0.1);
+}
+// Thick strip along a polyline (court lines, kerbs, planters, cables).
+function strip(pts, width, h, color, y0 = 0, o) {
+  const grp = new THREE.Group();
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [a, b] = [pts[i], pts[i + 1]], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (len < 1e-3) continue;
+    box(len + (h > .05 ? 0 : width), h, width, color, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2,
+        Math.atan2(b[1] - a[1], b[0] - a[0]), y0, grp, o).castShadow = h > .05;
+  }
+  scene.add(grp); return grp;
+}
+function label(text, x, z, y = 3, cls = '') {
+  const el = document.createElement('div'); el.className = 'lbl ' + cls; el.textContent = text;
+  const o = new CSS2DObject(el); o.position.set(x, y, z); scene.add(o); return o;
+}
+function logoTexture() {
+  const t = new THREE.TextureLoader().load('assets/logo.png'); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+}
+const LOGO = logoTexture();
+
+// ---------- ground, site floor, fence ----------
+const wall = PLAN.wall.slice(0, -1);
+const site = bbox(wall);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), mat('#d9d5cd'));
+ground.rotation.x = -Math.PI / 2; ground.position.set(site.cx, -0.02, site.cz); add(ground, scene, false);
+slab(wall, '#efece6', 0.04);
+
+const shapes = PLAN.shapes;
+const isRect = s => s.pts.length === 4 || (s.pts.length === 5 && Math.hypot(s.pts[0][0] - s.pts[4][0], s.pts[0][1] - s.pts[4][1]) < .05);
+const area = s => { const b = bbox(s.pts); return b.w * b.d; };
+const byFill = c => shapes.filter(s => s.fill === c);
+
+// gate openings on the fence (green = public, orange = vehicles)
+const gates = shapes.filter(s => (s.fill === '#00a651' || s.fill === '#ff8a00') && s.pts.length === 5).map(s => ({ ...obb(s.pts), color: s.fill }));
+const inGate = (x, z) => gates.some(g => Math.hypot(x - g.c[0], z - g.c[1]) < g.len / 2 + .2);
+
+const meshCanvas = document.createElement('canvas'); meshCanvas.width = meshCanvas.height = 64;
+{ const g = meshCanvas.getContext('2d'); g.strokeStyle = '#3d4a40'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(0, 0); g.lineTo(64, 64); g.moveTo(64, 0); g.lineTo(0, 64); g.stroke(); }
+const meshTex = new THREE.CanvasTexture(meshCanvas); meshTex.wrapS = meshTex.wrapT = THREE.RepeatWrapping;
+const FENCE_H = 3;
+for (let i = 0; i < wall.length; i++) {
+  const a = wall[i], b = wall[(i + 1) % wall.length];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]), ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+  const n = Math.max(1, Math.round(len / 2.5));
+  for (let k = 0; k < n; k++) {
+    const t0 = k / n, t1 = (k + 1) / n, tm = (t0 + t1) / 2;
+    const mx = a[0] + (b[0] - a[0]) * tm, mz = a[1] + (b[1] - a[1]) * tm, seg = len / n;
+    if (inGate(mx, mz)) continue;
+    box(seg, .45, .25, '#bdb8ae', mx, mz, ang);                             // concrete kerb
+    const tex = meshTex.clone(); tex.needsUpdate = true; tex.repeat.set(seg / .35, (FENCE_H - .45) / .35);
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(seg, FENCE_H - .45),
+      new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: .3, side: THREE.DoubleSide, roughness: .6, metalness: .4 }));
+    panel.position.set(mx, .45 + (FENCE_H - .45) / 2, mz); panel.rotation.y = -ang; add(panel);
+    const px = a[0] + (b[0] - a[0]) * t0, pz = a[1] + (b[1] - a[1]) * t0;
+    if (!inGate(px, pz)) cyl(.05, FENCE_H, '#2f3a33', px, pz);
+  }
+}
+for (const g of gates) {                                                   // open gate frames in the entry colour
+  const ex = Math.cos(g.ang) * g.len / 2, ez = Math.sin(g.ang) * g.len / 2;
+  cyl(.08, 3.2, g.color, g.c[0] - ex, g.c[1] - ez); cyl(.08, 3.2, g.color, g.c[0] + ex, g.c[1] + ez);
+  box(g.len, .15, .15, g.color, g.c[0], g.c[1], g.ang, 3.1);
+  slab(shapes.find(s => s.fill === g.color && s.pts.length > 5).pts, g.color, .03, .01);   // floor arrow
+}
+
+// ---------- courts ----------
+const surface = shapes.find(s => s.fill === '#d6d6d6' && isRect(s) && area(s) > 100);
+slab(surface.pts, '#cfcbc4', .03, .04);
+const courtPaint = shapes.filter(s => ['#e6007e', '#c4006b', '#f9c6df'].includes(s.fill) && isRect(s));
+courtPaint.forEach(s => slab(s.pts, s.fill, .01, .07));
+shapes.filter(s => !s.fill && (s.stroke === '#ffffff' || s.stroke === '#333333'))
+  .forEach(s => strip(s.pts, .06, .005, s.stroke, .08));
+
+// Hoops: one at each short end of the game court (union of its two halves) and the warm-up court.
+const game = bbox(courtPaint.filter(s => s.fill !== '#f9c6df').flatMap(s => s.pts));
+const warm = bbox(courtPaint.find(s => s.fill === '#f9c6df').pts);
+function hoop(baseX, z, dir) {                                             // dir = +1 hoop faces +x
+  const g = new THREE.Group();
+  cyl(.11, 3.35, '#1f5fbf', baseX - dir * 1.0, z, 0, g);                   // pole behind the baseline
+  box(.12, .12, .12, '#1f5fbf', baseX - dir * .55, z, 0, 3.2, g).scale.set(9, 1, 1);  // arm
+  box(.05, 1.05, 1.8, '#f6f6f6', baseX + dir * .0, z, 0, 2.9, g);          // backboard
+  const sq = new THREE.Mesh(new THREE.BoxGeometry(.06, .45, .59), mat('#d03030', { wireframe: true }));
+  sq.position.set(baseX + dir * .03, 3.25, z); g.add(sq);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(.23, .02, 8, 24), mat('#ff5a1f', { metalness: .3 }));
+  rim.rotation.x = Math.PI / 2; rim.position.set(baseX + dir * .38, 3.05, z); add(rim, g);
+  const net = new THREE.Mesh(new THREE.CylinderGeometry(.23, .15, .4, 12, 1, true), mat('#ffffff', { wireframe: true }));
+  net.position.set(baseX + dir * .38, 2.85, z); g.add(net);
+  box(.3, .9, .3, '#1f5fbf', baseX - dir * 1.0, z, 0, 0, g);               // padding at the base
+  scene.add(g);
+}
+for (const c of [game, warm]) { hoop(c.x0 + 1.2, c.cz, 1); hoop(c.x1 - 1.2, c.cz, -1); }
+
+// ---------- existing site furniture ----------
+shapes.filter(s => s.stroke === '#8c5a3c' && !s.fill).forEach(s => {
+  const len = s.pts.reduce((t, p, i) => i ? t + Math.hypot(p[0] - s.pts[i - 1][0], p[1] - s.pts[i - 1][1]) : 0, 0);
+  if (len > 40) {                                                          // planter along Sarkoudinou
+    strip(s.pts, .6, .45, '#9a6a4c');
+    for (let i = 0; i < s.pts.length - 1; i++) {
+      const [a, b] = [s.pts[i], s.pts[i + 1]], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      for (let t = .5; t < L; t += 1.1) {
+        const bush = new THREE.Mesh(new THREE.IcosahedronGeometry(.42 + Math.random() * .15, 0), mat('#5f8f4a', { flatShading: true }));
+        bush.position.set(a[0] + (b[0] - a[0]) * t / L, .75, a[1] + (b[1] - a[1]) * t / L); add(bush);
+      }
+    }
+  } else strip(s.pts, .6, .45, '#a5633f');                               // brick seating
+});
+byFill('#7a7a7a').filter(isRect).forEach(s => {                            // benches
+  const o = obb(s.pts);
+  box(o.len, .08, o.dep, '#8a7461', o.c[0], o.c[1], o.ang, .4);
+  for (const t of [-.4, .4]) box(.12, .4, o.dep * .8, '#55524d', o.c[0] + Math.cos(o.ang) * t * o.len, o.c[1] + Math.sin(o.ang) * t * o.len, o.ang);
+});
+['#c4c4c4', '#b5b5b5', '#a6a6a6'].map(c => byFill(c)[0]).filter(Boolean)  // stands, lowest tier nearest the court
+  .sort((a, b) => bbox(a.pts).cz - bbox(b.pts).cz)
+  .forEach((s, i) => slab(s.pts.slice(0, 4), '#c9c5be', .45 * (i + 1)));
+byFill('#c9c9c9').forEach(s => slab(s.pts.slice(0, 4), '#c9c5be', .45));
+byFill('#d6d6d6').filter(s => area(s) < 2 && isRect(s)).forEach(s => slab(s.pts.slice(0, 4), '#bdb8ae', .1));
+byFill('#939598').forEach(s => slab(s.pts, '#a9a6a0', 2.4));
+shapes.filter(s => s.stroke === '#7a7a7a' && s.pts.length === 2).forEach(s => strip(s.pts, .06, 1.0, '#6c6a66'));
+byFill('#d9cbb0').forEach(s => slab(s.pts, '#c9b897', .15));
+byFill('#6fa35a').forEach(s => {
+  const b = bbox(s.pts);
+  cyl(.22, 2.6, '#6b4d33', b.cx, b.cz, .15);
+  for (const [dx, dy, dz, r] of [[0, 4.2, 0, 2.1], [.8, 3.6, .5, 1.4], [-.7, 3.7, -.4, 1.5], [.2, 5.2, -.3, 1.3]]) {
+    const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mat('#5d8f45', { flatShading: true }));
+    leaf.position.set(b.cx + dx, dy, b.cz + dz); add(leaf);
+  }
+});
+
+// ---------- event build ----------
+// Sponsor tents: red dashed outlines.
+for (const s of shapes.filter(s => s.stroke === '#e30613' && s.dash)) {
+  const b = bbox(s.pts);
+  if (b.w < 1 && b.d < 1) { box(b.w, 1.1, b.d, '#ffffff', b.cx, b.cz); box(b.w + .02, .25, b.d + .02, '#e30613', b.cx, b.cz, 0, .85); continue; }
+  const isDJ = Math.hypot(b.cx - 19.9, b.cz - 22.2) < 1.5;
+  const H = 2.4, canopy = isDJ ? '#151515' : '#ffffff';
+  for (const [x, z] of [[b.x0, b.z0], [b.x1, b.z0], [b.x0, b.z1], [b.x1, b.z1]]) cyl(.04, H, '#9a9a9a', x, z);
+  box(b.w, .25, b.d, '#e30613', b.cx, b.cz, 0, H - .25);                   // valance
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.SQRT1_2, .9, 4, 1), mat(canopy));
+  roof.rotation.y = Math.PI / 4; roof.scale.set(b.w, 1, b.d); roof.position.set(b.cx, H + .45, b.cz); add(roof);
+  if (isDJ) { box(1.6, 1.0, .7, '#111111', b.cx, b.cz + .2); box(1.2, .08, .45, '#3a3a3a', b.cx, b.cz + .2, 0, 1.0); }
+  else box(Math.min(b.w, b.d) * .8, .9, .5, '#f2f2f2', b.cx, b.z1 - .6, 0, 0);  // counter
+  const near = BOOTH_NAMES.reduce((best, n) => { const d = Math.hypot(n.at[0] - b.cx, n.at[1] - b.cz); return d < best.d ? { d, n } : best; }, { d: 3 });
+  if (near.n) label(near.n.name, b.cx, b.cz, 3.6, 'booth');
+}
+// Secretariat (large black) and backdrops (thin black).
+for (const s of byFill('#111111').filter(s => isRect(s) && area(s) > 1)) {
+  const b = bbox(s.pts);
+  if (Math.min(b.w, b.d) > .8) {
+    box(b.w, .75, Math.min(b.d, .9), '#151515', b.cx, b.z1 - .5);
+    const n = Math.floor(b.w / 1.2);
+    for (let i = 0; i < n; i++) box(.45, .9, .45, '#3b3b3b', b.x0 + (i + .5) * b.w / n, b.z0 + .5);
+    label('ΓΡΑΜΜΑΤΕΙΑ', b.cx, b.cz, 2.2);
+  } else backdrop(b);
+}
+function backdrop(b) {
+  const horiz = b.w > b.d, len = Math.max(b.w, b.d), H = 2.5;
+  const g = new THREE.Group(); g.position.set(b.cx, 0, b.cz);
+  const towardCourt = horiz ? Math.sign(game.cz - b.cz) : Math.sign(game.cx - b.cx);
+  g.rotation.y = horiz ? (towardCourt > 0 ? 0 : Math.PI) : (towardCourt > 0 ? Math.PI / 2 : -Math.PI / 2);
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(len, H, .12), mat('#111111')); frame.position.y = H / 2 + .1; add(frame, g);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.5), new THREE.MeshStandardMaterial({ map: LOGO, transparent: true, roughness: .7 }));
+  face.position.set(0, H / 2 + .1, .065); g.add(face);
+  scene.add(g);
+}
+// LED screens: outer cyan rect gives size and position; face the game court.
+for (const s of byFill('#27aae1')) {
+  const b = bbox(s.pts), len = Math.max(b.w, b.d);
+  const g = new THREE.Group(); g.position.set(b.cx, 0, b.cz);
+  g.rotation.y = b.cx < game.cx ? Math.PI / 2 : -Math.PI / 2;
+  for (const t of [-len / 2 + .1, len / 2 - .1]) { const l = cyl(.05, 1.0, '#333333', t, 0, 0, g); }
+  const scr = new THREE.Mesh(new THREE.BoxGeometry(len, len * .5625, .12), mat('#1b1b1b')); scr.position.y = 1 + len * .28; add(scr, g);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(len * .96, len * .54),
+    new THREE.MeshStandardMaterial({ color: '#2e3192', emissive: '#2e3192', emissiveIntensity: .9, map: LOGO, emissiveMap: LOGO }));
+  glow.position.set(0, 1 + len * .28, .065); g.add(glow);
+  scene.add(g);
+  label('LED', b.cx, b.cz, 3.0);
+}
+// Chemical toilets: small slate squares are single cabins; a long slate block is a row of cabins.
+const wcLabels = [];
+for (const s of byFill('#4e6478')) {
+  const o = obb(s.pts), n = Math.max(1, Math.round(o.len / 1.25)), step = o.len / n;
+  for (let i = 0; i < n; i++) {
+    const t = -o.len / 2 + step * (i + .5), x = o.c[0] + Math.cos(o.ang) * t, z = o.c[1] + Math.sin(o.ang) * t;
+    box(step * .94, 2.25, Math.min(o.dep, 1.3), '#4e6478', x, z, o.ang);
+    box(step * .98, .08, Math.min(o.dep, 1.3) + .06, '#f2f2f2', x, z, o.ang, 2.25);
+  }
+  if (!wcLabels.some(p => Math.hypot(p[0] - o.c[0], p[1] - o.c[1]) < 5)) { wcLabels.push(o.c); label('WC', o.c[0], o.c[1], 3.0); }
+}
+for (const s of byFill('#2ec4e6')) { const o = obb(s.pts); box(o.len, .9, o.dep, '#c7d1d6', o.c[0], o.c[1], o.ang, 0, scene, { metalness: .8, roughness: .3 }); }
+// Ambulance.
+for (const s of byFill('#ffd400')) {
+  const o = obb(s.pts), g = new THREE.Group(); g.position.set(o.c[0], 0, o.c[1]); g.rotation.y = -o.ang;
+  const L = Math.min(o.len, 6.2), W = 2.3;
+  box(L * .72, 2.3, W, '#ffd400', -L * .14, 0, 0, .45, g);
+  box(L * .28, 1.6, W, '#ffd400', L * .36, 0, 0, .45, g);
+  box(.05, .7, W * .9, '#2a3440', L * .5, 0, 0, 1.2, g);                   // windscreen
+  box(L * .72, .25, W + .02, '#d81e2c', -L * .14, 0, 0, 1.2, g);           // stripe
+  for (const [x, z] of [[-L * .35, W / 2], [-L * .35, -W / 2], [L * .32, W / 2], [L * .32, -W / 2]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(.42, .42, .3, 16), mat('#1a1a1a')); w.rotation.x = Math.PI / 2; w.position.set(x, .42, z); add(w, g);
+  }
+  scene.add(g); label('ΕΚΑΒ', o.c[0], o.c[1], 3.4);
+}
+// Power runs.
+const cables = shapes.filter(s => s.stroke === '#11ff11').map(s => strip(s.pts, .12, .01, '#11d411', .09, { emissive: '#0a6', emissiveIntensity: .4 }));
+
+// ---------- labels ----------
+label('ΑΓΩΝΑΣ Α · 1VS1', (game.x0 + game.cx) / 2, game.cz, .6, 'zone');
+label('ΑΓΩΝΑΣ Β · 1VS1', (game.x1 + game.cx) / 2, game.cz, .6, 'zone');
+label('ΖΕΣΤΑΜΑ & ACTIVATIONS', warm.cx, warm.cz, .6, 'zone');
+label('ΚΕΡΚΙΔΑ', 20.7, 45.4, 2.0);
+for (const g of gates) label(g.color === '#00a651' ? 'ΕΙΣΟΔΟΣ ΚΟΙΝΟΥ' : 'ΕΙΣΟΔΟΣ ΟΧΗΜΑΤΩΝ', g.c[0], g.c[1] + 3, .3, g.color === '#00a651' ? 'in-green' : 'in-orange');
+label('ΟΔΟΣ Μ. ΣΑΡΚΟΥΔΙΝΟΥ', 20, -4, 0, 'street');
+label('ΟΔΟΣ ΑΜΕΙΝΟΚΛΕΟΥΣ', 14, 52.5, 0, 'street');
+label('ΜΟΥΡΤΑΪ (ΠΕΖΟΔΡΟΜΟΣ)', 50, 36, 0, 'street');
+label('ΠΑΙΔΙΚΗ ΧΑΡΑ', -5, 25, 0, 'street');
+
+// ---------- light ----------
+scene.add(new THREE.HemisphereLight('#fff7ea', '#b9b2a4', 1.5));
+const sun = new THREE.DirectionalLight('#ffe4bf', 2.4);
+sun.position.set(site.cx - 35, 55, site.cz + 25); sun.target.position.set(site.cx, 0, site.cz);
+sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -.0004; sun.shadow.normalBias = .02;
+Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 160 });
+scene.add(sun, sun.target);
+
+// ---------- camera & views ----------
+const target = new THREE.Vector3(site.cx, 0, site.cz);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.target.copy(target);
+controls.maxPolarAngle = Math.PI / 2.05; controls.minZoom = .5; controls.maxZoom = 6;
+const VIEWS = {
+  iso:  { dir: new THREE.Vector3(1, 1.15, 1),  zoom: 1 },
+  top:  { dir: new THREE.Vector3(0, 1, .0001), zoom: 1.05 },
+  gate: { dir: new THREE.Vector3(.35, .45, 1), zoom: 1.6, focus: [29, 38] },
+};
+function fit() {
+  const aspect = innerWidth / innerHeight, half = 36;
+  Object.assign(camera, aspect > 1 ? { left: -half * aspect, right: half * aspect, top: half, bottom: -half }
+                                   : { left: -half, right: half, top: half / aspect, bottom: -half / aspect });
+  camera.updateProjectionMatrix();
+}
+let anim = null;
+function setView(name) {
+  const v = VIEWS[name], focus = v.focus ? new THREE.Vector3(v.focus[0], 0, v.focus[1]) : target.clone();
+  anim = { t: 0, fromPos: camera.position.clone(), fromTarget: controls.target.clone(), fromZoom: camera.zoom,
+           toPos: focus.clone().add(v.dir.clone().normalize().multiplyScalar(120)), toTarget: focus, toZoom: v.zoom };
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('on', b.dataset.view === name));
+}
+camera.position.copy(target).add(VIEWS.iso.dir.clone().normalize().multiplyScalar(120));
+fit();
+
+document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => setView(b.dataset.view));
+document.getElementById('spin').onclick = e => { controls.autoRotate = !controls.autoRotate; e.target.classList.toggle('on', controls.autoRotate); };
+document.getElementById('labels').onclick = e => { document.body.classList.toggle('hide-labels'); e.target.classList.toggle('on'); };
+document.getElementById('cables').onclick = e => { const on = e.target.classList.toggle('on'); cables.forEach(c => c.visible = on); };
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight); fit(); });
+
+const ease = t => t < .5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+renderer.setAnimationLoop(() => {
+  if (anim) {
+    anim.t = Math.min(1, anim.t + .035); const k = ease(anim.t);
+    camera.position.lerpVectors(anim.fromPos, anim.toPos, k);
+    controls.target.lerpVectors(anim.fromTarget, anim.toTarget, k);
+    camera.zoom = anim.fromZoom + (anim.toZoom - anim.fromZoom) * k; camera.updateProjectionMatrix();
+    if (anim.t === 1) anim = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
